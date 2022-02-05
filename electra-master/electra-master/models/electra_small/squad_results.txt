@@ -1,0 +1,1 @@
+squad: HasAns_exact: 0.00 - HasAns_f1: 0.00 - HasAns_total: 96.00 - NoAns_exact: 100.00 - NoAns_f1: 100.00 - NoAns_total: 112.00 - best_exact: 53.85 - best_exact_thresh: 0.00 - best_f1: 53.85 - best_f1_thresh: 0.00 - exact: 53.85 - f1: 53.85 - total: 208.00
