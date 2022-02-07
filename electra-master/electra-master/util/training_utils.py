@@ -93,7 +93,7 @@ def secs_to_str(secs):
   return s
 
 
-def get_bert_config(config):
+def get_bert_config(config): #그래도 internally 해결되는구만. 
   """Get model hyperparameters based on a pretraining/finetuning config"""
   if config.model_size == "large":
     args = {"hidden_size": 1024, "num_hidden_layers": 24}

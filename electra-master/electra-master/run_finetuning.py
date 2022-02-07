@@ -36,7 +36,7 @@ from util import utils
 
 class FinetuningModel(object):
   """Finetuning model with support for multi-task training."""
-
+#electra uses same modeling as BERT
   def __init__(self, config: configure_finetuning.FinetuningConfig, tasks,
                is_training, features, num_train_steps):
     # Create a shared transformer encoder
@@ -63,8 +63,9 @@ class FinetuningModel(object):
     self.outputs = {"task_id": features["task_id"]}
     losses = []
     for task in tasks:
+      #is this
       with tf.variable_scope("task_specific/" + task.name):
-        task_losses, task_outputs = task.get_prediction_module(
+        task_losses, task_outputs = task.get_prediction_module( #pass this as tybple.
             bert_model, features, is_training, percent_done)
         losses.append(task_losses)
         self.outputs[task.name] = task_outputs
@@ -81,6 +82,7 @@ def model_fn_builder(config: configure_finetuning.FinetuningConfig, tasks,
     """The `model_fn` for TPUEstimator."""
     utils.log("Building model...")
     is_training = (mode == tf.estimator.ModeKeys.TRAIN)
+    # donghyeon) analysis step in
     model = FinetuningModel(
         config, tasks, is_training, features, num_train_steps)
 
@@ -132,47 +134,56 @@ def model_fn_builder(config: configure_finetuning.FinetuningConfig, tasks,
 
   return model_fn
 
-
+#does not use a traditional sess.run
 class ModelRunner(object):
   """Fine-tunes a model on a supervised task."""
 
-  def __init__(self, config: configure_finetuning.FinetuningConfig, tasks,
+  def __init__(self, config: configure_finetuning.FinetuningConfig, tasks, #config에서 모델명도 들어감.
                pretraining_config=None):
     self._config = config
     self._tasks = tasks
-    self._preprocessor = preprocessing.Preprocessor(config, self._tasks)
+    #donghyeon) anaylsis step in
+    self._preprocessor = preprocessing.Preprocessor(config, self._tasks) # "class for loading, preprocessing, and serializing fine-tuning datasets"
 
     is_per_host = tf.estimator.tpu.InputPipelineConfig.PER_HOST_V2
     tpu_cluster_resolver = None
     if config.use_tpu and config.tpu_name:
       tpu_cluster_resolver = tf.distribute.cluster_resolver.TPUClusterResolver(
           config.tpu_name, zone=config.tpu_zone, project=config.gcp_project)
+    #tpu esimator 에 전달할 수 있는 옵션 '양식'
     tpu_config = tf.estimator.tpu.TPUConfig(
         iterations_per_loop=config.iterations_per_loop,
         num_shards=config.num_tpu_cores,
         per_host_input_for_training=is_per_host,
         tpu_job_name=config.tpu_job_name)
-    run_config = tf.estimator.tpu.RunConfig(
+    run_config = tf.estimator.tpu.RunConfig( #donghyeon = through this, can pass session config to sess.run inside TPUestimator
         cluster=tpu_cluster_resolver,
         model_dir=config.model_dir,
-        save_checkpoints_steps=config.save_checkpoints_steps,
+        save_checkpoints_steps=config.save_checkpoints_steps, #debug 모드일 때만 값 주어짐.
         save_checkpoints_secs=None,
-        tpu_config=tpu_config)
+        tpu_config=tpu_config,
+        #added by donghyeon
+        session_config= tf.compat.v1.ConfigProto(inter_op_parallelism_threads=4) #donghyeon) 뜻밖에 병렬화를 처리하네.
+        )
 
     if self._config.do_train:
       (self._train_input_fn,
        self.train_steps) = self._preprocessor.prepare_train()
     else:
       self._train_input_fn, self.train_steps = None, 0
+    #where model is defined.
+    #donghyeon) analysis step in
+    #donghyeon) step out: build model for evaluation, no tensor flow involved.
     model_fn = model_fn_builder(
         config=config,
         tasks=self._tasks,
         num_train_steps=self.train_steps,
         pretraining_config=pretraining_config)
-    self._estimator = tf.estimator.tpu.TPUEstimator(
+    self._estimator = tf.estimator.tpu.TPUEstimator( #official tf1 doc: "an estimator with TPU support"
+        # "also supports training on CPU and GPU, thus no need to define a separate tf.estimator.Estimator"
         use_tpu=config.use_tpu,
         model_fn=model_fn,
-        config=run_config,
+        config=run_config, #이렇게 pass 해줌. 
         train_batch_size=config.train_batch_size,
         eval_batch_size=config.eval_batch_size,
         predict_batch_size=config.predict_batch_size)
@@ -182,14 +193,14 @@ class ModelRunner(object):
     self._estimator.train(
         input_fn=self._train_input_fn, max_steps=self.train_steps)
 
-  def evaluate(self):
-    return {task.name: self.evaluate_task(task) for task in self._tasks}
+  def evaluate(self): #donghyeon) analysis stepping from run_fintuning, evaluate.
+    return {task.name: self.evaluate_task(task) for task in self._tasks} #perform evaluate for each task.
 
   def evaluate_task(self, task, split="dev", return_results=True):
     """Evaluate the current model."""
     utils.log("Evaluating", task.name)
-    eval_input_fn, _ = self._preprocessor.prepare_predict([task], split)
-    results = self._estimator.predict(input_fn=eval_input_fn,
+    eval_input_fn, _ = self._preprocessor.prepare_predict([task], split) #must be a method to iterate task data
+    results = self._estimator.predict(input_fn=eval_input_fn, #_estimator: 바로 위 __init__에서 정의됨.
                                       yield_single_examples=True)
     scorer = task.get_scorer()
     for r in results:
@@ -201,7 +212,7 @@ class ModelRunner(object):
       utils.log()
       return dict(scorer.get_results())
     else:
-      return scorer
+      return scorer #returns the score for a dataset.
 
   def write_classification_outputs(self, tasks, trial, split):
     """Write classification predictions to disk."""
@@ -244,11 +255,11 @@ def write_results(config: configure_finetuning.FinetuningConfig, results):
   utils.write_pickle(results, config.results_pkl)
 
 
-def run_finetuning(config: configure_finetuning.FinetuningConfig):
+def run_finetuning(config: configure_finetuning.FinetuningConfig): # 'config:' a function annotation that python ignores'
   """Run finetuning."""
 
   #added by donghyeon
-  config.threading.set_inter_op_parallelism_threads(4)
+  config.threading.set_inter_op_parallelism_threads(4) #this still doesn't work
   # Setup for training
   results = []
   trial = 1
@@ -256,9 +267,9 @@ def run_finetuning(config: configure_finetuning.FinetuningConfig):
       config.model_name, trial, config.num_trials)
   heading = lambda msg: utils.heading(msg + ": " + heading_info)
   heading("Config")
-  utils.log_config(config)
+  utils.log_config(config)  #print finetune config
   generic_model_dir = config.model_dir
-  tasks = task_builder.get_tasks(config)
+  tasks = task_builder.get_tasks(config) #tokenizing for each task. (tasks can be inputted in batch)
 
   # Train and evaluate num_trials models with different random seeds
   while config.num_trials < 0 or trial <= config.num_trials:
@@ -266,7 +277,9 @@ def run_finetuning(config: configure_finetuning.FinetuningConfig):
     if config.do_train:
       utils.rmkdir(config.model_dir)
 
-    model_runner = ModelRunner(config, tasks)
+    #donghyeon) analyze step in
+    model_runner = ModelRunner(config, tasks) #input is config & task / "finetunes a model on supervised task"
+        #-> 그래도 일단은 정의까지만 확인
     if config.do_train:
       heading("Start training")
       model_runner.train()
@@ -274,9 +287,11 @@ def run_finetuning(config: configure_finetuning.FinetuningConfig):
 
     if config.do_eval:
       heading("Run dev set evaluation")
-      results.append(model_runner.evaluate())
-      write_results(config, results)
-      if config.write_test_outputs and trial <= config.n_writes_test:
+      #donghyeon) analysis step in : model_runner.evaluate() / #'evaluating current model'
+      #그럼 이 함수에서 run을 진행하는 것.
+      results.append(model_runner.evaluate()) #각 task에 대해 evaluata_task.
+      write_results(config, results) #write result as pickle
+      if config.write_test_outputs and trial <= config.n_writes_test: # 추가 실행으로 이해. 위에서 이미 모든 task에 대해 dev set으로 평가함.
         heading("Running on the test set and writing the predictions")
         for task in tasks:
           # Currently only writing preds for GLUE and SQuAD 2.0 is supported
@@ -300,14 +315,15 @@ def run_finetuning(config: configure_finetuning.FinetuningConfig):
 
     if trial != config.num_trials and (not config.keep_all_models):
       utils.rmrf(config.model_dir)
-    trial += 1
+    trial += 1 #count trials
 
 
-def main():
+def main(): #여기서부터 하나씩 내려가면서 들어가자.
     #by donghyeon
   #session = tf.Session(tf.config.threading.set_inter_op_parallelism_threads(4))
 
 
+  #define argument parser
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument("--data-dir", required=True,
                       help="Location of data files (model weights, etc).")
@@ -315,14 +331,16 @@ def main():
                       help="The name of the model being fine-tuned.")
   parser.add_argument("--hparams", default="{}",
                       help="JSON dict of model hyperparameters.")
+  #parse args from cmd line
   args = parser.parse_args()
   if args.hparams.endswith(".json"):
     hparams = utils.load_json(args.hparams)
   else:
     hparams = json.loads(args.hparams)
   tf.logging.set_verbosity(tf.logging.ERROR)
+
   run_finetuning(configure_finetuning.FinetuningConfig(
-      args.model_name, args.data_dir, **hparams))
+      args.model_name, args.data_dir, **hparams)) #renew FinetuningConfig with argpare variables.
 
 
 if __name__ == "__main__":
