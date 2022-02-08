@@ -4,8 +4,8 @@ import torch
 import torch.nn as nn
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 #to profile
-import torchvision.models as tvmodels
-from torch.profiler import profile, record_function, ProfilerActivity #a new API from pytorch v1.8, used to be torch.autograd.profiler
+#import torchvision.models as tvmodels
+#from torch.profiler import profile, record_function, ProfilerActivity #a new API from pytorch v1.8, used to be torch.autograd.profiler
 
 INPUT_DIM = 7855 #from colab
 OUTPUT_DIM = 5893 #from colab
@@ -31,6 +31,7 @@ dec = Decoder(OUTPUT_DIM, HIDDEN_DIM, DEC_LAYERS, DEC_HEADS, DEC_PF_DIM, DEC_DRO
 
 # Transformer 객체 선언
 model = Transformer(enc, dec, SRC_PAD_IDX, TRG_PAD_IDX, device).to(device)
+model.load_state_dict(torch.load(model.save_filename())) #for the sake of jit? 더 해봐야한다. 
 
 #mock forward pass
 def initialize_weights(m):
@@ -85,37 +86,37 @@ src_indexes = [2, 8, 364, 10, 134, 70, 624, 565, 19, 780, 200, 20, 88, 4, 3]
 
 #for profiling
 #with profile(activities=[ProfilerActivity.CPU],profile_memory=False,with_stack=True,record_shapes=True) as prof: #for CLI
-with profile(on_trace_ready=torch.profiler.tensorboard_trace_handler('./log/electra'),profile_memory=True,with_stack=True,record_shapes=True) as prof: #for tensorboard
-    with record_function("model_inference"):
-        src_tensor = torch.LongTensor(src_indexes).unsqueeze(0).to(device)
+#with profile(on_trace_ready=torch.profiler.tensorboard_trace_handler('./log/electra'),profile_memory=True,with_stack=True,record_shapes=True) as prof: #for tensorboard
+    #with record_function("model_inference"):
+src_tensor = torch.LongTensor(src_indexes).unsqueeze(0).to(device)
 
-        # 소스 문장에 따른 마스크 생성
-        src_mask = model.make_src_mask(src_tensor)
+# 소스 문장에 따른 마스크 생성
+src_mask = model.make_src_mask(src_tensor)
 
-        # 인코더(endocer)에 소스 문장을 넣어 출력 값 구하기
-        with torch.no_grad(): #disable gradient calculation.
-            enc_src = model.encoder(src_tensor, src_mask)
+# 인코더(endocer)에 소스 문장을 넣어 출력 값 구하기
+with torch.no_grad(): #disable gradient calculation.
+    enc_src = model.encoder(src_tensor, src_mask)
 
-        # 처음에는 <sos> 토큰 하나만 가지고 있도록 하기
-        trg_indexes = [2] #타겟의 embedding 값, 처음엔 <sos>로 시작하고, 하나씩 .append()한다.
+# 처음에는 <sos> 토큰 하나만 가지고 있도록 하기
+trg_indexes = [2] #타겟의 embedding 값, 처음엔 <sos>로 시작하고, 하나씩 .append()한다.
 
-        for i in range(max_len): #아 이런 식으로 inference 하는구나.
-        #
-            trg_tensor = torch.LongTensor(trg_indexes).unsqueeze(0).to(device)
+for i in range(max_len): #아 이런 식으로 inference 하는구나.
+#
+    trg_tensor = torch.LongTensor(trg_indexes).unsqueeze(0).to(device)
 
-            # 출력 문장에 따른 마스크 생성
-            trg_mask = model.make_trg_mask(trg_tensor) #근데 이미 딱 앞의 정보 밖에 없는데? , 아 그래도 길이는 max_length니깐.
+    # 출력 문장에 따른 마스크 생성
+    trg_mask = model.make_trg_mask(trg_tensor) #근데 이미 딱 앞의 정보 밖에 없는데? , 아 그래도 길이는 max_length니깐.
 
-            with torch.no_grad():
-                output, attention = model.decoder(trg_tensor, enc_src, trg_mask, src_mask) #trg을 디코더에 돌린다.
+    with torch.no_grad():
+        output, attention = model.decoder(trg_tensor, enc_src, trg_mask, src_mask) #trg을 디코더에 돌린다.
 
-            # 출력 문장에서 가장 마지막 단어만 사용
-            pred_token = output.argmax(2)[:,-1].item() #마지막 문장을
-            trg_indexes.append(pred_token) # 출력 문장에 더하기
+    # 출력 문장에서 가장 마지막 단어만 사용
+    pred_token = output.argmax(2)[:,-1].item() #마지막 문장을
+    trg_indexes.append(pred_token) # 출력 문장에 더하기
 
-            # <eos>를 만나는 순간 끝
-            if pred_token == 3:
-                break
+    # <eos>를 만나는 순간 끝
+    if pred_token == 3:
+        break
 #end of profile scope
 #print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10)) #print cpu profile result
 #print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10)) #print profile result
