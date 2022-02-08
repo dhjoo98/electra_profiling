@@ -31,7 +31,6 @@ dec = Decoder(OUTPUT_DIM, HIDDEN_DIM, DEC_LAYERS, DEC_HEADS, DEC_PF_DIM, DEC_DRO
 
 # Transformer 객체 선언
 model = Transformer(enc, dec, SRC_PAD_IDX, TRG_PAD_IDX, device).to(device)
-model.load_state_dict(torch.load(model.save_filename())) #for the sake of jit? 더 해봐야한다. 
 
 #mock forward pass
 def initialize_weights(m):
@@ -39,6 +38,10 @@ def initialize_weights(m):
         nn.init.xavier_uniform_(m.weight.data)
 
 model.apply(initialize_weights) #그냥 이런 식으로 apply 하는구나. (weight initialize)
+
+#for the sake of jit (inspired by Intel AL profiling with Vtune slides)
+torch.save(model.state_dict(), './saved_state_dict')
+model.load_state_dict(torch.load('./saved_state_dict'))
 
 #skip training: this is for the sake of model inference profiling
 
