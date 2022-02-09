@@ -81,7 +81,7 @@ def evaluate(model, iterator, criterion):
 #번역 함수 def translate_sentence에서 토크나이저를 안써도 되게 수정하자.
 model.eval() # 평가 모드
 
-src_indexes = [2, 8, 364, 10, 134, 70, 624, 565, 19, 780, 200, 20, 88, 4, 3]
+src_indexes = [[2, 8, 364, 10, 134, 70, 624, 565, 19, 780, 200, 20, 88, 4, 3]*10]
 
 #for profiling
 with profile(activities=[ProfilerActivity.CPU],profile_memory=False,with_stack=True,record_shapes=True) as prof: #for CLI
