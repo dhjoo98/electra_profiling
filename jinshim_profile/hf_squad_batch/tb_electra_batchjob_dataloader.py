@@ -1,6 +1,5 @@
+#tb needs gradient to create trace
 
-
-#그리 정확한 구현은 아닌 것 같다.
 from transformers import ElectraForPreTraining, ElectraTokenizerFast
 import torch
 from torch import nn
@@ -20,17 +19,20 @@ model_size = args.model_size
 input_length = args.input_length
 batch_size = args.batch_size
 url = "google/electra-"+model_size+"-discriminator"
-tb_output = './log/electra_'+model_size
-input_multiplier = int(input_length/8)
+tb_output = '/home/dhjoo/work/jinshim_profile/hf_squad_batch/log/electra_'+model_size
+
 
 class squadcontextDataset(Dataset):
     def __init__(self):
-        with open("train_context_extract.json", "r") as st_json:
+        with open("/home/dhjoo/work/jinshim_profile/hf_squad_batch/train_context_extract.json", "r") as st_json:
             self.input_list = json.load(st_json)
-        self.len = len(self.input_list)
+            self.output_list = []
+            for i in self.input_list:
+                self.output_list.append(" ".join(i[0:input_length]))
+        self.len = len(self.output_list)
 
     def __getitem__(self,index):
-        return self.input_list[index]
+        return self.output_list[index]
 
     def __len__(self):
         return self.len
@@ -39,7 +41,7 @@ class electra(nn.Module):
     def __init__(self):
         super(electra, self).__init__()
         self.tokenizer = ElectraTokenizerFast.from_pretrained(url) #identical to Bert tokenizer fake_sentence
-        self.discriminator = ElectraForPreTraining.from_pretrained(url)
+        self.discriminator = ElectraForPreTraining.from_pretrained(url)#.eval() 이것 때문에 텐서보드가 안되는걸수도.
         #ElectraForPreTraining: parameters in 'config' ; inherits from PreTrainedModel ; also a nn.Module subclass.
         #from_pretrained: a string, model id of a pretrained model hosted inside a model repo on huggingface.co
 
@@ -53,15 +55,13 @@ class electra(nn.Module):
 if __name__ == '__main__':
     #with profile(activities=[ProfilerActivity.CPU],profile_memory=False,with_stack=True,record_shapes=True) as prof: #for CLI
     with profile(on_trace_ready=torch.profiler.tensorboard_trace_handler(tb_output),profile_memory=True,with_stack=True,record_shapes=True) as prof:
+        print("num of threads used: ", torch.get_num_threads())
         dataset = squadcontextDataset()
-        train_loader = DataLoader(dataset=dataset,batch_size=batch_size,num_workers=1)
-        test_model=electra()
+        train_loader = DataLoader(dataset=dataset,batch_size=batch_size,num_workers=0)
+        test_model=electra()#.eval()
         output = []
-        for _, data in enumerate(train_loader):
+        for _ , data in enumerate(train_loader):
             for i in range(batch_size):
-                #print("data:",len(data))
-                output.append(test_model.forward(data[i][0:input_length]))
-        #predictions = test_model.forward(fake_sentence)
-        #[print("%7s" % int(prediction), end="") for prediction in predictions.squeeze().tolist()]
-        print("done!:with length: ", len(output))
-        #for tensorboard
+                #print(data[0])
+                output.append(test_model.forward(data[0]))
+        print("done!:with batch length: ", len(output))
