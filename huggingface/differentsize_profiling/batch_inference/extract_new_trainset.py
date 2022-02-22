@@ -1,4 +1,5 @@
 import json
+import re
 '''
 dataset =
 
@@ -13,9 +14,14 @@ with open("train-v2.0.json", "r") as st_json:
             st_python = json.load(st_json)
             save_list = []
             for i,li in enumerate((st_python["data"][0]["paragraphs"])):
-                    save_list.append(li["context"][0:512])
+                    hash = re.sub(r'[^\w\s]', '', li["context"])
+                    hash = hash.split()
+                    hash = hash * 20
+                    save_list.append(hash[0:512])
+                    print(len(hash[0:512]))
+            print("savelist: ", len(save_list))
             json.dump(save_list[0:64],json_file)
-            print(len(save_list[0:64]))
+            #print(len(save_list[0:64]))
 
     #print(st_python.keys())
     #new_dict = {'data':[st_python["data"][0]]}
